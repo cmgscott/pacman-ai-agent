@@ -5,13 +5,18 @@ ghost is closest?)
 Add way to target paths with dots Left
 Add way to target fruit and super dots when safe to do so
 + Add way to target ghosts when blue
+
+To do (10/05/18):
+- store bubble cell objects in array with edges
+- implement dijkstras
 **/
 function selectMove() {
     if (!PACMAN_DEAD && !GAMEOVER) { // make sure the game is running
       // update states
         var bubbleArray = createBubbleArray();
         var ghostArray = createGhostArray();
-        populateSearchGraph(ghostArray, bubbleArray);
+        var searchPQ = populateSearchGraph(ghostArray, bubbleArray);
+        dijkstras();
         var directions = [];
         for (var i = 1; i < 5; i++) {
             if (canMovePacman(i)) directions.push(i);
@@ -19,6 +24,7 @@ function selectMove() {
 
         if (directions.length > 2 || !PACMAN_MOVING) {
           changeDirection();
+
         }
 
     }
@@ -104,11 +110,11 @@ function selectMove() {
     }
 
     // function to calculate h
-    function h(ghostInfoArray, x, y) {
+    function h(ghostInfoArray, row, col) {
       var totalGhostPaths = 0; // will hold total cost of all ghosts to space
       for (var i = 0; i < 4; i++) {
-        totalGhostPaths += Math.abs(ghostInfoArray[0].x - x);
-        totalGhostPaths += Math.abs(ghostInfoArray[0].y - y);
+        totalGhostPaths += Math.abs(ghostInfoArray[i].x - row * 11);
+        totalGhostPaths += Math.abs(ghostInfoArray[i].y - col * 11);
       }
       return totalGhostPaths;
     }
@@ -125,18 +131,58 @@ function selectMove() {
       return arr;
       }
 
-    // function to create evaluation graph
-    function populateSearchGraph(ghostInfoArray, bubbleObjArray) {
-      var numCol = BUBBLES_X_END - BUBBLES_X_START;
-      var numRow = BUBBLES_Y_END - BUBBLES_Y_START;
-      var bubbleGap = BUBBLES_GAP;
-      var searchGraph = Create2DArray(1000);
-      for (var i = 0; i < 550; i++) {
-        for (var j = 0; j < 550; j++) {
-        searchGraph[i][j] = 5000 - h(ghostInfoArray, i, j);
-        }
-        //console.log(bubbleObjArray[i].x);
+      // function to create space objects to add to priority queue
+      function Space(ghostInfoArray, x, y) {
+        this.x = x;
+        this.y = y;
+        this.ghostPathCost = h(ghostInfoArray, x, y);
       }
 
+    // function to create a basic priority queue
+    function PriorityQueue(arr, comparator, object, arrLength) {
+      if (arrLength == 0) {
+        arr[0] = object;
+      } else {
+      for (var i = 0; i < arrLength; i++) {
+        if (arr[i] <= comparator) {
+          arr.splice(i, 0, object);
+        } else if (i == arrLength - 1) {
+          arr.push(object);
+        }
+      }
     }
+      return arr;
+    }
+
+    // function to create evaluation graph
+    function populateSearchGraph(ghostInfoArray, bubbleObjArray) {
+      var numCol = 26;
+      var numRow = 29;
+        //console.log(numCol);
+      //var bubbleGap = BUBBLES_GAP;
+      //var searchGraph = Create2DArray(550 * 8);
+      //for (var i = 0; i < 550; i++) {
+        //for (var j = 0; j < 550; j++) {
+        //searchGraph[i][j] = 5000 - h(ghostInfoArray, i, j);
+        //}
+        //console.log(bubbleObjArray[i].x);
+      //}
+      searchPQ = [];
+      for (bubble in bubbleArray) {
+          //searchPQ = PriorityQueue(searchPQ, h(ghostInfoArray, bubbleArray[bubble].row, bubbleArray[bubble].col), bubble);
+      }
+      //console.log(searchPQ.length);
+      return searchPQ;
+
+    }
+
+    function dijkstras() {
+      var solutionPath = [];
+      var dijkstraGraph = Create2DArray(29);
+      console.log(Math.floor(PACMAN_POSITION_X / 21));
+      dijkstraGraph[Math.floor(PACMAN_POSITION_X / 21)][Math.abs(PACMAN_POSITION_Y / 18)] = 0;
+
+    }
+
+
 };
