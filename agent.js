@@ -1,142 +1,304 @@
-/**
-NOTES:
-Add avoids for all ghosts (possibly use closest ghost variable to store which
-ghost is closest?)
-Add way to target paths with dots Left
-Add way to target fruit and super dots when safe to do so
-+ Add way to target ghosts when blue
-**/
+var GAMEBOARD = [];
+
+var getXY = function(x, y) {
+    var i = Math.floor((x - BUBBLES_X_START + BUBBLES_GAP/2)/BUBBLES_GAP);
+    var j = Math.floor((y - BUBBLES_Y_START + 9)/17.75);
+
+    return {x: i, y: j}
+}
+
+var buildGameboard = function () {
+    GAMEBOARD = [];
+    for(var i = 0; i < 26; i++) {
+        GAMEBOARD.push([]);
+        for(var j = 0; j < 29; j++) {
+            GAMEBOARD[i].push({
+                bubble: false,
+                superBubble: false,
+                inky: false,
+                pinky: false,
+                blinky: false,
+                clyde: false,
+                pacman: false,
+                eaten: false,
+                row: j,
+                col: i,
+                nodeWeight: Infinity,
+                edges: new Map(),
+                previousNode: 0,
+                visited: false
+            });
+        }
+    }
+
+    for(var i = 0; i < BUBBLES_ARRAY.length; i++) {
+        var bubbleParams = BUBBLES_ARRAY[i].split( ";" );
+        var y = parseInt(bubbleParams[1]) - 1;
+        var x = parseInt(bubbleParams[2]) - 1;
+        var type = bubbleParams[3];
+        var eaten = parseInt(bubbleParams[4]);
+        if (type === "b") {
+            GAMEBOARD[x][y].bubble = true;
+        } else {
+            GAMEBOARD[x][y].superBubble = true;
+        }
+        if(eaten === 0) {
+            GAMEBOARD[x][y].eaten = false;
+        } else {
+            GAMEBOARD[x][y].eaten = true;
+        }
+    }
+
+    for(var i = 0; i < 26; i++) {
+        for(var j = 0; j < 29; j++) {
+            if(!GAMEBOARD[i][j].bubble && !GAMEBOARD[i][j].superBubble){
+                GAMEBOARD[i][j] = null;
+            }
+        }
+    }
+
+    for(var i = 0; i < 26; i++) {
+        for(var j = 0; j < 29; j++) {
+            if((i === 0 && (j === 13)) ||
+                (i === 1 && (j === 13)) ||
+                (i === 2 && (j === 13)) ||
+                (i === 3 && (j === 13)) ||
+                (i === 4 && (j === 13)) ||
+                (i === 6 && (j === 13)) ||
+                (i === 7 && (j === 13)) ||
+                (i === 8 && (j >= 10 && j <= 18)) ||
+                (i === 9 && (j === 10 || j === 16)) ||
+                (i === 10 && (j === 10 || j === 16)) ||
+                (i === 11 && (((j >= 8) && (j <= 10)) || j === 16)) ||
+                (i === 12 && (j === 10 || j === 16)) ||
+                (i === 13 && (j === 10 || j === 16)) ||
+                (i === 14 && (((j >= 8) && (j <= 10)) || j === 16)) ||
+                (i === 15 && (j === 10 || j === 16)) ||
+                (i === 16 && (j === 10 || j === 16)) ||
+                (i === 17 && (j >= 10 && j <= 18)) ||
+                (i === 18 && (j === 13)) ||
+                (i === 19 && (j === 13)) ||
+                (i === 21 && (j === 13)) ||
+                (i === 22 && (j === 13)) ||
+                (i === 23 && (j === 13)) ||
+                (i === 24 && (j === 13)) ||
+                (i === 25 && (j === 13)))  {
+                GAMEBOARD[i][j] = {
+                    bubble: false,
+                    superBubble: false,
+                    inky: false,
+                    pinky: false,
+                    blinky: false,
+                    clyde: false,
+                    pacman: false,
+                    eaten: false,
+                    row: j,
+                    col: i,
+                    nodeWeight: Infinity,
+                    edges: new Map(),
+                    previousNode: 0,
+                    visited: false
+                };
+            }
+        }
+    }
+
+    // set ghost positions on gameboard
+    var ip = getXY(GHOST_INKY_POSITION_X,GHOST_INKY_POSITION_Y);
+    if(GAMEBOARD[ip.x][ip.y] && ip.x >= 0 && ip.x < 26) GAMEBOARD[ip.x][ip.y].inky = true;
+    var pp = getXY(GHOST_PINKY_POSITION_X,GHOST_PINKY_POSITION_Y);
+    if(GAMEBOARD[pp.x][pp.y] && pp.x >= 0 && pp.x < 26) GAMEBOARD[pp.x][pp.y].pinky = true;
+    var bp = getXY(GHOST_BLINKY_POSITION_X,GHOST_BLINKY_POSITION_Y);
+    if(GAMEBOARD[bp.x][bp.y] && bp.x >= 0 && bp.x < 26) GAMEBOARD[bp.x][bp.y].blinky = true;
+    var cp = getXY(GHOST_CLYDE_POSITION_X,GHOST_CLYDE_POSITION_Y);
+    if(GAMEBOARD[cp.x][cp.y] && cp.x >= 0 && cp.x < 26) GAMEBOARD[cp.x][cp.y].clyde = true;
+
+    // set pacman's position on gameboard
+    var pacp = getXY(PACMAN_POSITION_X, PACMAN_POSITION_Y);
+    if(GAMEBOARD[pacp.x][pacp.y] && pacp.x >= 0 && pacp.x < 26) {
+        GAMEBOARD[pacp.x][pacp.y].pacman = true;
+        // set initial path cost to 0
+        GAMEBOARD[pacp.x][pacp.y].pathCost = 0;
+        GAMEBOARD[pacp.x][pacp.y].nodeWeight = 0;
+        GAMEBOARD[pacp.x][pacp.y].previousNode = 0;
+    }
+
+    // create edges arrays for each traversable space, then calculate weight
+    var inkyDanger;
+    var pinkyDanger;
+    var blinkyDanger;
+    var clydeDanger;
+    var totalDanger;
+    for (var i = 0; i < 26; i++) {
+        for (var j = 0; j < 29; j++) {
+            if (GAMEBOARD[i][j] != null) {
+                sourceNode = GAMEBOARD[i][j];
+                if (j != 28) {
+                    if (GAMEBOARD[i][j + 1]) {
+                        // calculate weight of space
+                        inkyDanger = 220 - Math.abs(ip.x - j+1 + ip.y - i);
+                        pinkyDanger = 220 - Math.abs(pp.x - j+1 + pp.y - i);
+                        blinkyDanger = 220 - Math.abs(bp.x - j+1 + bp.y - i);
+                        clydeDanger = 220 - Math.abs(cp.x - j+1 + cp.y - i);
+                        totalDanger = inkyDanger + pinkyDanger + blinkyDanger + clydeDanger;
+                        sourceNode.edges.set(GAMEBOARD[i][j + 1], totalDanger);
+                    }
+                }
+                if (j != 0) {
+                    if (GAMEBOARD[i][j - 1] != null) {
+                        // calculate weight of space
+                        inkyDanger = 220 - Math.abs(ip.x - j-1 + ip.y - i);
+                        pinkyDanger = 220 - Math.abs(pp.x - j-1 + pp.y - i);
+                        blinkyDanger = 220 - Math.abs(bp.x - j-1 + bp.y - i);
+                        clydeDanger = 220 - Math.abs(cp.x - j-1 + cp.y - i);
+                        totalDanger = inkyDanger + pinkyDanger + blinkyDanger + clydeDanger;
+                        sourceNode.edges.set(GAMEBOARD[i][j - 1], totalDanger);
+                    }
+                }
+                if (i != 25) {
+                    if (GAMEBOARD[i + 1][j]) {
+                        // calculate weight of space
+                        inkyDanger = 220 - Math.abs(ip.x - j + ip.y - i+1);
+                        pinkyDanger = 220 - Math.abs(pp.x - j + pp.y - i+1);
+                        blinkyDanger = 220 - Math.abs(bp.x - j + bp.y - i+1);
+                        clydeDanger = 220 - Math.abs(cp.x - j + cp.y - i+1);
+                        totalDanger = inkyDanger + pinkyDanger + blinkyDanger + clydeDanger;
+                        sourceNode.edges.set(GAMEBOARD[i + 1][j], totalDanger);
+                    }
+                }
+                if (i != 0) {
+                    if (GAMEBOARD[i - 1][j] != null) {
+                        // calculate weight of space
+                        inkyDanger = 220 - Math.abs(ip.x - j + ip.y - i-1);
+                        pinkyDanger = 220 - Math.abs(pp.x - j + pp.y - i-1);
+                        blinkyDanger = 220 - Math.abs(bp.x - j + bp.y - i-1);
+                        clydeDanger = 220 - Math.abs(cp.x - j + cp.y - i-1);
+                        totalDanger = inkyDanger + pinkyDanger + blinkyDanger + clydeDanger;
+                        sourceNode.edges.set(GAMEBOARD[i - 1][j], totalDanger);
+                    }
+                }
+            }
+        }
+    }
+
+};
+
+function drawRect(i,j) {
+    var ctx = PACMAN_CANVAS_CONTEXT;
+    var ygap = 17.75;
+    var x = BUBBLES_X_START + i*BUBBLES_GAP - BUBBLES_GAP/2;
+    var y = BUBBLES_Y_START + j*ygap- 9;
+    var w = BUBBLES_GAP;
+    var h = ygap;
+
+    if(GAMEBOARD[i][j]){
+        ctx.strokeStyle = "green";
+        ctx.rect(x,y,w,h);
+        ctx.stroke();
+    }
+}
+
+function drawDebug() {
+    for(var i = 0; i < 26; i++) {
+        for(var j = 0; j < 29; j++) {
+            drawRect(i,j);
+        }
+    }
+}
+
+// resort the array
+function sortArray(array) {
+    var count = 0;
+    for (var i = 0; i < array.length; i++) {
+        while (count <= i) {
+            if (array[i] != null && array[count] != null && array[i].nodeWeight >= array[count].nodeWeight) {
+                var tempNode = array[i];
+                array.splice(i, 1);
+                array.splice(count, 0, tempNode);
+            }
+            count++;
+        }
+        count = 0;
+    }
+    return array;
+}
+
+function diskstras() {
+    var unvisitedSpaces = [];
+    var visitedSpaces = [];
+    var index = 0;
+    for (var i = 0; i < 26; i++) {
+        for (var j = 0; j < 29; j++) {
+            if (GAMEBOARD[i][j] != null) {
+                unvisitedSpaces[index] = GAMEBOARD[i][j];
+                index++;
+            }
+        }
+    }
+    unvisitedSpaces = sortArray(unvisitedSpaces);
+    var currentNode = unvisitedSpaces.pop();
+    // reset index back to 0!
+    index = 0;
+    while (unvisitedSpaces.length > 0) {
+        var edgeMap = currentNode.edges;
+        var keyIterator = edgeMap.keys();
+        for (i = 0; i < edgeMap.size; i++) {
+            var boardSpace = keyIterator.next().value;
+            if (!boardSpace.pacman && !boardSpace.visited) {
+                boardSpace.nodeWeight = edgeMap.get(boardSpace) + currentNode.nodeWeight;
+                boardSpace.previousNode = currentNode;
+            }
+        }
+        visitedSpaces[index] = currentNode;
+        currentNode.visited = true;
+        sortArray(unvisitedSpaces);
+        currentNode = unvisitedSpaces.pop();
+        index++;
+    }
+    return visitedSpaces;
+}
+
+// find path from dijkstra
+function findSafestPath(spacesArray) {
+    var firstNode = spacesArray[0];
+    var nextNode = firstNode.previousNode;
+    var thePath = [];
+    thePath.push(firstNode);
+    thePath.push(nextNode);
+    while (nextNode.previousNode !== 0) {
+        nextNode = nextNode.previousNode;
+        thePath.push(nextNode);
+    }
+    thePath = thePath.reverse();
+    return thePath;
+}
+
+// pick direction from path
+function pickDirection(safestNextSpace) {
+    var pacPos = getXY(PACMAN_POSITION_X, PACMAN_POSITION_Y);
+    console.log("pacmans: " + pacPos.x + ", " + pacPos.y);
+    console.log("safespace: " + safestNextSpace.col + ", " + safestNextSpace.row);
+    var returnDir = -1;
+    if (pacPos.x === safestNextSpace.col - 1) returnDir = 3;
+    if (pacPos.x === safestNextSpace.col + 1) returnDir = 1;
+    if (pacPos.y === safestNextSpace.row - 1) returnDir = 4;
+    if (pacPos.y === safestNextSpace.row + 1) returnDir = 2;
+    console.log("direction chosen: " + returnDir);
+    return returnDir;
+}
+
 function selectMove() {
+
+    buildGameboard();
+
     if (!PACMAN_DEAD && !GAMEOVER) { // make sure the game is running
-      // update states
-        var bubbleArray = createBubbleArray();
-        var ghostArray = createGhostArray();
-        populateSearchGraph(ghostArray, bubbleArray);
+        var spacesCost = diskstras();
+        spacesCost = sortArray(spacesCost);
+        safestPath = findSafestPath(spacesCost);
+        //console.log("length: " + safestPath.length);
+        var newDir = pickDirection(safestPath[1]);
         var directions = [];
-        for (var i = 1; i < 5; i++) {
-            if (canMovePacman(i)) directions.push(i);
-        }
-
-        if (directions.length > 2 || !PACMAN_MOVING) {
-          changeDirection();
-        }
-
-    }
-
-    // copied from ghost.js and editted to apply to pacman
-    function changeDirection() {
-    	var direction = PACMAN_DIRECTION;
-    	//var state = PACMAN_STATE; add back in when sure what it's for
-    	var pacmanX = PACMAN_POSITION_X;
-    	var pacmanY = PACMAN_POSITION_Y;
-
-    	var axe = oneAxe();
-
-    	tryDirection = getRightPacDirection(axe, GHOST_BLINKY_POSITION_X, GHOST_BLINKY_POSITION_X, PACMAN_POSITION_X, PACMAN_POSITION_Y);
-      if (directions.indexOf(tryDirection) == -1) tryDirection = directions[Math.floor(Math.random() * directions.length)];
-    		movePacman(tryDirection);
-    }
-
-    // copied from ghost.js and modified to apply to pacman
-    function getRightPacDirection(axe, ghostX, ghostY, pacmanX, pacmanY) {
-    	if (axe === 1) {
-    		if (ghostX >= pacmanX) { // replaced greater than with less than to run
-    		 return 3;
-    		} else {
-    			return 1;
-    		}
-    	} else {
-    		if (ghostY >= pacmanY) { // again replace greater than with less than
-    		 return 4;
-    		} else {
-    			return 2;
-    		}
-    	}
-    }
-
-    // function to create more easily accessed bubble info
-    function CreateBubbleObj(bubbleString) {
-      var splitBubbleString = bubbleString.split(";");
-      var splitBubbleCoords = splitBubbleString[0].split(",");
-      this.x = splitBubbleCoords[0];
-      this.y = splitBubbleCoords[1];
-      this.row = splitBubbleString[1];
-      this.col = splitBubbleString[2];
-      this.type = splitBubbleString[3];
-      this.eaten = splitBubbleString[4];
-    }
-
-    // function to create bubble object Array
-    function createBubbleArray() {
-      var count = 0;
-      var bubbleObjArray = [];
-      for (bubble in BUBBLES_ARRAY) {
-        tempBubble = new CreateBubbleObj(BUBBLES_ARRAY[bubble]);
-        bubbleObjArray[count] = tempBubble;
-        count++;
-      }
-      return bubbleObjArray;
-    }
-
-    // function to create ghost object
-    function createGhostObj(ghostName) {
-    this.x = eval("GHOST_" + ghostName + "_POSITION_X");
-    this.y = eval("GHOST_" + ghostName + "_POSITION_Y");
-    this.dir = eval("GHOST_" + ghostName + "_DIRECTION");
-    this.movingTimer = eval("GHOST_" + ghostName + "_MOVING_TIMER");
-    this.moving = eval("GHOST_" + ghostName + "_MOVING");
-    this.bodyState = eval("GHOST_" + ghostName + "_BODY_STATE");
-    this.state = eval("GHOST_" + ghostName + "_STATE");
-    this.eatTimer = eval("GHOST_" + ghostName + "_EAT_TIMER");
-    this.afraidTimer =  eval("GHOST_" + ghostName + "_AFFRAID_TIMER");
-    this.afraidState =  eval("GHOST_" + ghostName + "_AFFRAID_STATE");
-    this.tunnel =  eval("GHOST_" + ghostName + "_TUNNEL");
-    }
-
-    // function to create array of ghost info
-    function createGhostArray() {
-      var ghostInfoArray = [];
-      ghostInfoArray[0] = new createGhostObj("PINKY");
-      ghostInfoArray[1] = new createGhostObj("BLINKY");
-      ghostInfoArray[2] = new createGhostObj("INKY");
-      ghostInfoArray[3] = new createGhostObj("CLYDE");
-      return ghostInfoArray;
-    }
-
-    // function to calculate h
-    function h(ghostInfoArray, x, y) {
-      var totalGhostPaths = 0; // will hold total cost of all ghosts to space
-      for (var i = 0; i < 4; i++) {
-        totalGhostPaths += Math.abs(ghostInfoArray[0].x - x);
-        totalGhostPaths += Math.abs(ghostInfoArray[0].y - y);
-      }
-      return totalGhostPaths;
-    }
-
-    // function to create nD arrays. found on stackoverflow.com:
-    // https://stackoverflow.com/questions/966225/how-can-i-create-a-two-dimensional-array-in-javascript/966938#966938
-    function Create2DArray(rows) {
-      var arr = [];
-
-      for (var i=0;i<rows;i++) {
-         arr[i] = [];
-      }
-
-      return arr;
-      }
-
-    // function to create evaluation graph
-    function populateSearchGraph(ghostInfoArray, bubbleObjArray) {
-      var numCol = BUBBLES_X_END - BUBBLES_X_START;
-      var numRow = BUBBLES_Y_END - BUBBLES_Y_START;
-      var bubbleGap = BUBBLES_GAP;
-      var searchGraph = Create2DArray(1000);
-      for (var i = 0; i < 550; i++) {
-        for (var j = 0; j < 550; j++) {
-        searchGraph[i][j] = 5000 - h(ghostInfoArray, i, j);
-        }
-        //console.log(bubbleObjArray[i].x);
-      }
-
     }
 };
+
+//setInterval(drawDebug, 1000/3);
